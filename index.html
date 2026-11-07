@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<meta name="robots" content="noindex">
+<title>Evaluación</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  html { -webkit-text-size-adjust: 100%; }
+  body { -webkit-tap-highlight-color: transparent; touch-action: manipulation; min-height: 100dvh; overflow-wrap: anywhere; }
+  /* Respeta la zona segura (notch / barra de gestos) en iPhone y Android */
+  .safe-top { padding-top: env(safe-area-inset-top); }
+  .safe-bottom { padding-bottom: max(0.75rem, env(safe-area-inset-bottom)); }
+  .safe-x { padding-left: max(1rem, env(safe-area-inset-left)); padding-right: max(1rem, env(safe-area-inset-right)); }
+  .opcion { transition: border-color .15s, background-color .15s; min-height: 56px; user-select: none; -webkit-user-select: none; }
+  .opcion:active { background-color: #eef2ff; }
+  .opcion .tick { opacity: 0; }
+  .opcion[aria-checked="true"] { border-color: #4338ca; background-color: #eef2ff; }
+  .opcion[aria-checked="true"] .letra { background-color: #4338ca; color: #fff; }
+  .opcion[aria-checked="true"] .tick { opacity: 1; }
+  .fade { animation: fade .2s ease-out; }
+  @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+</style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen">
+
+<header class="sticky top-0 z-10 bg-white border-b border-slate-200 safe-top">
+  <div class="max-w-2xl mx-auto safe-x py-2.5 flex items-center justify-between gap-3">
+    <div class="min-w-0">
+      <p id="encabezado" class="text-xs text-slate-500 truncate"></p>
+      <p id="tituloPrueba" class="text-sm font-semibold leading-tight text-slate-900 line-clamp-2">Evaluación</p>
+      <p id="indicador" class="text-xs text-slate-500" aria-live="polite"></p>
+    </div>
+    <button id="btnFinalizar" type="button"
+      class="hidden shrink-0 min-h-[44px] rounded-lg border border-rose-300 bg-white px-3 text-sm font-semibold leading-tight text-rose-700 active:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-300">
+      Finalizar<br class="sm:hidden"> Evaluación
+    </button>
+  </div>
+  <div class="h-1 bg-slate-100"><div id="barra" class="h-1 bg-indigo-600 transition-all duration-300" style="width:0%"></div></div>
+</header>
+
+<main class="max-w-2xl mx-auto safe-x py-5 pb-32">
+
+  <div id="bannerDemo" class="hidden mb-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+    Modo demostración: las respuestas no se guardan. Configura <code>APPS_SCRIPT_URL</code> en <code>config.js</code>.
+  </div>
+
+  <!-- Carga -->
+  <section id="vista-carga" class="py-16 text-center text-slate-500">Cargando evaluación…</section>
+
+  <!-- Error -->
+  <section id="vista-error" class="hidden fade rounded-2xl bg-white border border-rose-200 p-6 shadow-sm">
+    <h1 class="text-lg font-semibold text-rose-700">No se pudo abrir la evaluación</h1>
+    <p id="errorTexto" class="mt-2 text-slate-600"></p>
+  </section>
+
+  <!-- Registro -->
+  <section id="vista-registro" class="hidden fade rounded-2xl bg-white border border-slate-200 p-6 shadow-sm">
+    <h1 class="text-xl font-semibold text-slate-900">Registro</h1>
+    <p class="mt-1 text-sm text-slate-600">Ingresa tus datos para comenzar. Primero harás 2 preguntas de práctica.</p>
+    <form id="formRegistro" class="mt-5 space-y-4" novalidate>
+      <div>
+        <label for="nombre" class="block text-sm font-medium text-slate-700">Nombre completo</label>
+        <input id="nombre" type="text" autocomplete="name" autocapitalize="words" enterkeyhint="next" maxlength="120"
+          class="mt-1 w-full min-h-[48px] rounded-lg border border-slate-300 px-3 py-2.5 text-base focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+        <p id="errNombre" class="mt-1 hidden text-sm text-rose-600">Ingresa tu nombre y apellido.</p>
+      </div>
+      <div>
+        <label for="rut" class="block text-sm font-medium text-slate-700">RUT o documento de identidad</label>
+        <input id="rut" type="text" inputmode="text" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false"
+          enterkeyhint="go" placeholder="12.345.678-9" maxlength="20"
+          class="mt-1 w-full min-h-[48px] rounded-lg border border-slate-300 px-3 py-2.5 text-base focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+        <p id="errRut" class="mt-1 hidden text-sm text-rose-600">Ingresa tu RUT o documento (entre 4 y 20 caracteres).</p>
+        <p id="avisoDv" class="mt-1 hidden text-sm text-amber-700">El dígito verificador no coincide. Revisa tu RUT; si está correcto, presiona "Comenzar Prueba" nuevamente.</p>
+      </div>
+      <button type="submit"
+        class="w-full min-h-[52px] rounded-lg bg-indigo-700 px-4 text-base font-semibold text-white active:bg-indigo-900 focus:outline-none focus:ring-2 focus:ring-indigo-300">
+        Comenzar Prueba
+      </button>
+    </form>
+  </section>
+
+  <!-- Pregunta (piloto y real) -->
+  <section id="vista-pregunta" class="hidden fade">
+    <div id="etiquetaPractica" class="hidden mb-3 inline-block rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
+      PREGUNTA DE PRÁCTICA · no cuenta para la nota
+    </div>
+    <div class="rounded-2xl bg-white border border-slate-200 p-5 shadow-sm">
+      <h2 id="enunciado" class="text-lg font-medium leading-snug text-slate-900 whitespace-pre-line"></h2>
+      <div id="alternativas" class="mt-5 space-y-3" role="radiogroup" aria-labelledby="enunciado"></div>
+    </div>
+  </section>
+
+  <!-- Aviso fin de práctica -->
+  <section id="vista-aviso" class="hidden fade rounded-2xl bg-white border border-indigo-200 p-6 shadow-sm text-center">
+    <div class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-indigo-100 text-2xl">✓</div>
+    <h1 class="text-xl font-semibold text-slate-900">Terminó la práctica</h1>
+    <p class="mt-3 text-slate-700">A continuación comienza la <strong>evaluación oficial</strong> (<span id="avisoTotal">35</span> preguntas).</p>
+    <ul class="mt-4 space-y-1 text-left text-sm text-slate-600 list-disc pl-6">
+      <li>Verás una pregunta a la vez.</li>
+      <li>Al llegar a la última, volverás a la primera para que puedas revisar y cambiar respuestas.</li>
+      <li>Cuando estés listo(a), usa el botón <strong>Finalizar Evaluación</strong> de la parte superior.</li>
+    </ul>
+    <button id="btnIniciarReal" type="button"
+      class="mt-6 w-full min-h-[52px] rounded-lg bg-indigo-700 px-4 text-base font-semibold text-white active:bg-indigo-900 focus:outline-none focus:ring-2 focus:ring-indigo-300">
+      Comenzar evaluación oficial
+    </button>
+  </section>
+
+  <!-- Fin -->
+  <section id="vista-fin" class="hidden fade rounded-2xl bg-white border border-emerald-200 p-6 shadow-sm text-center">
+    <div class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-2xl text-emerald-700">✓</div>
+    <h1 class="text-xl font-semibold text-slate-900">Respuestas enviadas</h1>
+    <p id="finTexto" class="mt-2 text-slate-600">Tu evaluación fue recibida correctamente. Ya puedes cerrar esta ventana.</p>
+    <p id="finPuntaje" class="mt-3 hidden text-lg font-semibold text-indigo-700"></p>
+  </section>
+</main>
+
+<!-- Barra inferior fija: "Siguiente" siempre al alcance del pulgar -->
+<div id="barraSiguiente" class="hidden fixed bottom-0 inset-x-0 z-10 border-t border-slate-200 bg-white/95 backdrop-blur safe-bottom pt-3">
+  <div class="max-w-2xl mx-auto safe-x">
+    <button id="btnSiguiente" type="button"
+      class="w-full min-h-[52px] rounded-xl bg-indigo-700 px-4 text-base font-semibold text-white active:bg-indigo-900 focus:outline-none focus:ring-2 focus:ring-indigo-300">
+      Siguiente
+    </button>
+  </div>
+</div>
+
+<!-- Modal de confirmación (hoja inferior en móvil) -->
+<div id="modal" class="hidden fixed inset-0 z-20 flex items-end sm:items-center justify-center bg-slate-900/50 sm:p-4" role="dialog" aria-modal="true" aria-labelledby="modalTitulo">
+  <div class="w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-t-2xl sm:rounded-2xl bg-white p-6 shadow-xl safe-bottom">
+    <h2 id="modalTitulo" class="text-lg font-semibold text-slate-900">Finalizar evaluación</h2>
+    <p class="mt-2 text-slate-700">¿Estás seguro de que deseas enviar tus respuestas? No podrás volver a editarlas.</p>
+    <p id="modalAdvertencia" class="mt-2 hidden rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800"></p>
+    <p id="modalError" class="mt-2 hidden rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700"></p>
+    <div class="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+      <button id="btnCancelar" type="button" class="min-h-[48px] rounded-lg border border-slate-300 px-4 font-medium text-slate-700 active:bg-slate-100">Cancelar</button>
+      <button id="btnConfirmar" type="button" class="min-h-[48px] rounded-lg bg-rose-600 px-4 font-semibold text-white active:bg-rose-800 disabled:opacity-60">Confirmar envío</button>
+    </div>
+  </div>
+</div>
+
+<script src="config.js"></script>
+<script>
+(() => {
+  'use strict';
+  // Valores por defecto: así el nombre del docente se ve aunque falte config.js
+  const CFG = Object.assign({ ENCABEZADO: 'Prof. Cristian Chávez Pizarro', PRUEBA_POR_DEFECTO: 'demo' }, window.EVAL_CONFIG || {});
+  const URL_API = (CFG.APPS_SCRIPT_URL || '').trim();
+  const MODO_DEMO = !URL_API;
+  const LETRAS = ['A', 'B', 'C', 'D'];
+  const $ = (id) => document.getElementById(id);
+
+  /* ---------- Estado ---------- */
+  const S = {
+    id: '', prueba: null, nombre: '', rut: '',
+    fase: 'registro',        // registro | piloto | aviso | real | fin
+    idx: 0, resp: [], respPiloto: [], inicio: null, enviando: false,
+    orden: []                // orden de las alternativas que ve este estudiante, por pregunta
+  };
+
+  /* ---------- Mezcla de alternativas (distinta para cada estudiante) ----------
+     Lo que se guarda en S.resp es siempre la letra ORIGINAL de la alternativa
+     (la de Pruebas.gs), no la letra que el estudiante ve en pantalla. Así el
+     puntaje del servidor no depende del orden en que se mostraron. */
+  function azar(m) {
+    if (window.crypto && crypto.getRandomValues) { const u = new Uint32Array(1); crypto.getRandomValues(u); return u[0] % m; }
+    return Math.floor(Math.random() * m);
+  }
+  function barajar(a) {
+    for (let i = a.length - 1; i > 0; i--) { const j = azar(i + 1); [a[i], a[j]] = [a[j], a[i]]; }
+    return a;
+  }
+  const crearOrden = (n) => Array.from({ length: n }, () => CFG.ALEATORIZAR_ALTERNATIVAS === false ? [0, 1, 2, 3] : barajar([0, 1, 2, 3]));
+  const ordenValido = (o, n) => Array.isArray(o) && o.length === n &&
+    o.every((p) => Array.isArray(p) && p.length === 4 && [0, 1, 2, 3].every((k) => p.includes(k)));
+  // Las preguntas de práctica no se mezclan.
+  const ordenActual = () => (S.fase === 'real' && S.orden[S.idx]) ? S.orden[S.idx] : [0, 1, 2, 3];
+
+  /* ---------- RUT / documento de identidad ----------
+     Se acepta cualquier identificador de 4 a 20 caracteres (letras, números, puntos, guion).
+     Si tiene forma de RUT chileno se formatea como 12.345.678-9; si no (pasaporte, etc.) se deja como se escribió. */
+  const limpiarRut = (v) => String(v).toUpperCase().replace(/[^0-9A-Z]/g, '');
+  const soloFormaRut = (v) => /^[0-9.\-kK\s]*$/.test(String(v));
+  function formatearRut(v) {
+    v = String(v).toUpperCase().replace(/[^0-9A-Z.\- ]/g, '').slice(0, 20);
+    if (!soloFormaRut(v)) return v;                       // pasaporte u otro documento: sin formato
+    const c = limpiarRut(v);
+    if (c.length < 2) return c;
+    return c.slice(0, -1).replace(/\B(?=(\d{3})+(?!\d))/g, '.') + '-' + c.slice(-1);
+  }
+  function validarRut(v) {                                // válido = entre 4 y 20 caracteres alfanuméricos
+    const n = limpiarRut(v).length;
+    return n >= 4 && n <= 20;
+  }
+  const pareceRutChileno = (v) => /^\d{7,8}[0-9K]$/.test(limpiarRut(v));
+  function dvCorrecto(v) {
+    const c = limpiarRut(v), cuerpo = c.slice(0, -1), dv = c.slice(-1);
+    let suma = 0, m = 2;
+    for (let i = cuerpo.length - 1; i >= 0; i--) { suma += Number(cuerpo[i]) * m; m = m === 7 ? 2 : m + 1; }
+    const r = 11 - (suma % 11);
+    return (r === 11 ? '0' : r === 10 ? 'K' : String(r)) === dv;
+  }
+
+  /* ---------- Vistas ---------- */
+  const VISTAS = ['carga', 'error', 'registro', 'pregunta', 'aviso', 'fin'];
+  function mostrar(v) {
+    VISTAS.forEach((n) => $('vista-' + n).classList.toggle('hidden', n !== v));
+    $('btnFinalizar').classList.toggle('hidden', !(v === 'pregunta' && S.fase === 'real'));
+    $('barraSiguiente').classList.toggle('hidden', v !== 'pregunta');
+    if (v !== 'pregunta') { $('indicador').textContent = ''; }
+    if (v === 'registro' || v === 'aviso' || v === 'fin') $('barra').style.width = v === 'fin' ? '100%' : '0%';
+    window.scrollTo({ top: 0 });
+  }
+  function mostrarError(msg) { $('errorTexto').textContent = msg; mostrar('error'); }
+
+  /* ---------- Persistencia local (sobrevive a recargas) ---------- */
+  const claveGuardado = () => `eval:${S.id}:${limpiarRut(S.rut)}`;
+  const claveEnviado = () => `eval-enviado:${S.id}:${limpiarRut(S.rut)}`;
+  function guardar() {
+    try {
+      localStorage.setItem(claveGuardado(), JSON.stringify({
+        nombre: S.nombre, fase: S.fase, idx: S.idx, resp: S.resp, respPiloto: S.respPiloto, inicio: S.inicio, orden: S.orden
+      }));
+    } catch (_) { /* almacenamiento no disponible: se continúa en memoria */ }
+  }
+  const leerGuardado = () => { try { return JSON.parse(localStorage.getItem(claveGuardado())); } catch (_) { return null; } };
+
+  /* ---------- Carga de la prueba ---------- */
+  function generarDemo() {
+    const mk = (n) => ({
+      enunciado: `Pregunta de demostración ${n}. Reemplazar por el enunciado real.`,
+      alternativas: LETRAS.map((l) => `Alternativa ${l} de la pregunta ${n}`)
+    });
+    return {
+      id: 'demo', titulo: 'Prueba de demostración',
+      pilotos: [mk('piloto 1'), mk('piloto 2')],
+      preguntas: Array.from({ length: 35 }, (_, i) => mk(i + 1))
+    };
+  }
+
+  async function cargarPrueba() {
+    const params = new URLSearchParams(location.search);
+    S.id = (params.get('prueba') || CFG.PRUEBA_POR_DEFECTO || 'demo').trim();
+    $('encabezado').textContent = CFG.ENCABEZADO || '';
+    if (MODO_DEMO) {
+      $('bannerDemo').classList.remove('hidden');
+      if (window.EVAL_PREVIEW_PRUEBA) {   // solo en vista-previa.html: preguntas reales, sin guardar nada
+        $('bannerDemo').textContent = 'Vista previa con las preguntas reales. Las respuestas no se guardan.';
+        S.prueba = window.EVAL_PREVIEW_PRUEBA;
+      } else {
+        S.prueba = generarDemo();
+      }
+    } else {
+      try {
+        const r = await fetch(`${URL_API}?accion=prueba&id=${encodeURIComponent(S.id)}`);
+        const d = await r.json();
+        if (!d.ok) throw new Error(d.error || 'Prueba no disponible.');
+        S.prueba = d.prueba;
+      } catch (e) {
+        return mostrarError('Verifica que el enlace o el código QR sean correctos. (' + (e.message || 'sin conexión') + ')');
+      }
+    }
+    $('tituloPrueba').textContent = S.prueba.titulo || 'Evaluación';
+    document.title = S.prueba.titulo || 'Evaluación';
+    $('avisoTotal').textContent = S.prueba.preguntas.length;
+    mostrar('registro');
+  }
+
+  /* ---------- Registro ---------- */
+  $('rut').addEventListener('input', (e) => { e.target.value = formatearRut(e.target.value); $('errRut').classList.add('hidden'); $('avisoDv').classList.add('hidden'); });
+  $('nombre').addEventListener('input', () => $('errNombre').classList.add('hidden'));
+
+  $('formRegistro').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const nombre = $('nombre').value.trim().replace(/\s+/g, ' ');
+    const rut = $('rut').value;
+    const nombreOk = nombre.length >= 5 && nombre.includes(' ');
+    const rutOk = validarRut(rut);
+    $('errNombre').classList.toggle('hidden', nombreOk);
+    $('errRut').classList.toggle('hidden', rutOk);
+    if (!nombreOk || !rutOk) return;
+    // Aviso suave (no bloquea): si parece un RUT chileno pero el dígito verificador no calza, se pide confirmar una vez.
+    if (pareceRutChileno(rut) && !dvCorrecto(rut) && S.rutAdvertido !== limpiarRut(rut)) {
+      S.rutAdvertido = limpiarRut(rut); $('avisoDv').classList.remove('hidden'); return;
+    }
+
+    S.nombre = nombre; S.rut = formatearRut(rut);
+    if (localStorage.getItem(claveEnviado())) {
+      $('finTexto').textContent = 'Ya enviaste esta evaluación con este RUT. No es posible enviarla nuevamente.';
+      S.fase = 'fin'; return mostrar('fin');
+    }
+    const n = S.prueba.preguntas.length;
+    const g = leerGuardado();
+    if (g && Array.isArray(g.resp) && g.resp.length === n) {
+      Object.assign(S, { fase: g.fase, idx: g.idx, resp: g.resp, respPiloto: g.respPiloto || [null, null], inicio: g.inicio });
+    } else {
+      S.fase = 'piloto'; S.idx = 0;
+      S.resp = new Array(n).fill(null);
+      S.respPiloto = new Array(S.prueba.pilotos.length).fill(null);
+      S.inicio = Date.now();
+    }
+    S.orden = ordenValido(g && g.orden, n) ? g.orden : crearOrden(n);
+    guardar();
+    if (S.fase === 'aviso') return mostrar('aviso');
+    renderPregunta();
+  });
+
+  /* ---------- Preguntas ---------- */
+  function renderPregunta() {
+    const piloto = S.fase === 'piloto';
+    const lista = piloto ? S.prueba.pilotos : S.prueba.preguntas;
+    const resp = piloto ? S.respPiloto : S.resp;
+    const q = lista[S.idx];
+
+    $('etiquetaPractica').classList.toggle('hidden', !piloto);
+    $('enunciado').textContent = q.enunciado;
+
+    const cont = $('alternativas');
+    cont.replaceChildren();
+    const orden = ordenActual();
+    orden.forEach((orig, i) => {
+      const texto = q.alternativas[orig];
+      const letra = LETRAS[orig];          // letra original: es la que se guarda y se puntúa
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'opcion w-full flex items-center gap-3 rounded-xl border-2 border-slate-200 bg-white p-3 text-left focus:outline-none focus:ring-2 focus:ring-indigo-200';
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-checked', String(resp[S.idx] === letra));
+      b.dataset.letra = letra;
+      const badge = document.createElement('span');
+      badge.className = 'letra flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-bold text-slate-700';
+      badge.textContent = LETRAS[i];       // letra que ve el estudiante (siempre A, B, C, D en orden)
+      const t = document.createElement('span');
+      t.className = 'min-w-0 flex-1 text-base leading-snug text-slate-800';
+      t.textContent = texto;
+      const tick = document.createElement('span');
+      tick.className = 'tick shrink-0 text-lg font-bold text-indigo-700';
+      tick.setAttribute('aria-hidden', 'true');
+      tick.textContent = '✓';
+      b.append(badge, t, tick);
+      b.addEventListener('click', () => seleccionar(letra));
+      cont.appendChild(b);
+    });
+
+    if (piloto) {
+      $('indicador').textContent = `Práctica ${S.idx + 1} de ${lista.length}`;
+      $('barra').style.width = '0%';
+    } else {
+      const resp_n = S.resp.filter(Boolean).length;
+      $('indicador').textContent = `Pregunta ${S.idx + 1} de ${lista.length} · Respondidas: ${resp_n}`;
+      $('barra').style.width = ((S.idx + 1) / lista.length * 100) + '%';
+    }
+    mostrar('pregunta');
+  }
+
+  function seleccionar(letra) {
+    const arr = S.fase === 'piloto' ? S.respPiloto : S.resp;
+    arr[S.idx] = letra;
+    document.querySelectorAll('#alternativas .opcion').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.letra === letra)));
+    if (S.fase === 'real') {
+      $('indicador').textContent = `Pregunta ${S.idx + 1} de ${S.prueba.preguntas.length} · Respondidas: ${S.resp.filter(Boolean).length}`;
+    }
+    guardar();
+  }
+
+  $('btnSiguiente').addEventListener('click', () => {
+    if (S.fase === 'piloto') {
+      if (S.idx < S.prueba.pilotos.length - 1) { S.idx++; guardar(); return renderPregunta(); }
+      S.fase = 'aviso'; S.idx = 0; guardar(); return mostrar('aviso');
+    }
+    // Navegación cíclica: tras la última vuelve a la primera
+    S.idx = (S.idx + 1) % S.prueba.preguntas.length;
+    guardar();
+    renderPregunta();
+  });
+
+  $('btnIniciarReal').addEventListener('click', () => {
+    S.fase = 'real'; S.idx = 0; guardar(); renderPregunta();
+  });
+
+  // Atajo de teclado A-D
+  document.addEventListener('keydown', (e) => {
+    if ($('vista-pregunta').classList.contains('hidden') || !$('modal').classList.contains('hidden')) return;
+    if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+    const pos = LETRAS.indexOf(e.key.toUpperCase());     // posición que ve el estudiante
+    if (pos >= 0) seleccionar(LETRAS[ordenActual()[pos]]);
+  });
+
+  /* ---------- Finalizar ---------- */
+  $('btnFinalizar').addEventListener('click', () => {
+    const sin = S.resp.filter((r) => !r).length;
+    const adv = $('modalAdvertencia');
+    adv.textContent = sin ? `Tienes ${sin} pregunta${sin > 1 ? 's' : ''} sin responder.` : '';
+    adv.classList.toggle('hidden', !sin);
+    $('modalError').classList.add('hidden');
+    $('modal').classList.remove('hidden');
+    $('btnCancelar').focus();
+  });
+  $('btnCancelar').addEventListener('click', () => { if (!S.enviando) $('modal').classList.add('hidden'); });
+
+  $('btnConfirmar').addEventListener('click', async () => {
+    if (S.enviando) return;
+    S.enviando = true;
+    const btn = $('btnConfirmar');
+    btn.disabled = true; btn.textContent = 'Enviando…';
+    $('modalError').classList.add('hidden');
+    try {
+      const payload = {
+        accion: 'enviar', prueba: S.id, nombre: S.nombre, rut: S.rut,
+        respuestas: S.resp.map((r) => r || ''),
+        duracionSeg: Math.round((Date.now() - (S.inicio || Date.now())) / 1000)
+      };
+      let out;
+      if (MODO_DEMO) {
+        console.log('DEMO · payload que se enviaría:', payload);
+        await new Promise((r) => setTimeout(r, 600));
+        out = { ok: true };
+      } else {
+        const ctl = new AbortController();
+        const to = setTimeout(() => ctl.abort(), 30000);
+        const r = await fetch(URL_API, {
+          method: 'POST', body: JSON.stringify(payload), signal: ctl.signal,
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' }   // evita preflight CORS
+        });
+        clearTimeout(to);
+        out = await r.json();
+      }
+      if (!out.ok) throw new Error(out.error || 'No se pudo guardar.');
+      try { localStorage.setItem(claveEnviado(), '1'); localStorage.removeItem(claveGuardado()); } catch (_) {}
+      if (typeof out.puntaje === 'number') {
+        $('finPuntaje').textContent = `Puntaje: ${out.puntaje} de ${out.total}`;
+        $('finPuntaje').classList.remove('hidden');
+      }
+      S.fase = 'fin';
+      $('modal').classList.add('hidden');
+      mostrar('fin');
+    } catch (e) {
+      const m = e.name === 'AbortError' ? 'La conexión tardó demasiado.' : (e.message || 'Error de conexión.');
+      $('modalError').textContent = `${m} Tus respuestas siguen guardadas en este dispositivo; intenta confirmar nuevamente.`;
+      $('modalError').classList.remove('hidden');
+    } finally {
+      S.enviando = false; btn.disabled = false; btn.textContent = 'Confirmar envío';
+    }
+  });
+
+  cargarPrueba();
+})();
+</script>
+</body>
+</html>
